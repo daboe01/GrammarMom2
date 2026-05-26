@@ -661,7 +661,8 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
         return;
     }
 
-    var paragraphs = documentText.split(/\n\n+/);
+    // Splittet bei doppelten Zeilenumbrüchen ODER bei einem Punkt, gefolgt von einem Zeilenumbruch und einem Großbuchstaben
+    var paragraphs = documentText.split(/(?:\r?\n\r?\n+)|(?<=\.)\r?\n(?=\p{Lu})/u);
     _totalParagraphs = paragraphs.length;
     _completedParagraphs = 0;
 
