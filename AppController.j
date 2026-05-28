@@ -86,13 +86,13 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     var defaultSettings = [CPDictionary dictionaryWithObjects:[
         @"http://localhost:11434/api/generate",
         @"gemma4:e4b",
-        @"openrouter",              // <- Geändert von "ollama" auf "openrouter"
+        @"openrouter",
         @"",
-        @"llama3-8b-8192",
+        @"llama-3.1-8b-instant",
         @"",
-        @"gemini-2.0-flash",
+        @"gemini-3.1-flash-lite",
         @"",
-        @"google/gemini-2.0-flash-001" // <- Geändert von "openai/gpt-4o"
+        @"google/gemini-3.1-flash-lite-preview"
     ] forKeys:[
         @"OllamaEndpoint",
         @"OllamaModel",
