@@ -202,7 +202,9 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     [_editorTextView setRichText:YES];
     [_editorTextView setFont:[CPFont fontWithName:@"Arial" size:14.0]];
     [_editorTextView setDelegate:self];
-    
+    [_editorTextView setAutoresizingMask:CPViewWidthSizable];
+    [[_editorTextView textContainer] setWidthTracksTextView:YES];
+
     [editorScroll setDocumentView:_editorTextView];
     [splitView addSubview:editorScroll];
 
