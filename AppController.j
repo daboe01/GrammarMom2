@@ -5,29 +5,103 @@
 var CorrectionHighlightColorAttributeName = @"CorrectionHighlightColorAttributeName";
 var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttributeName";
 
-// Hilfsklasse für eine interaktive, neutrale Klickfläche ohne Standard-Highlighting
-@implementation AlertCardBackgroundView : CPView
+// Fallback constants for system function keys if missing in active runtime scope
+var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
+    CPF7FunctionKey = CPF7FunctionKey || @"\uf70a",
+    CPF8FunctionKey = CPF8FunctionKey || @"\uf70b";
+
+// Subclass of CPBox that handles keyboard focus and keystroke events directly
+@implementation AlertCardView : CPBox
 {
-    id _target;
-    SEL _action;
     id _representedObject @accessors(property=representedObject);
 }
 
-- (void)setTarget:(id)aTarget
+- (BOOL)acceptsFirstResponder
 {
-    _target = aTarget;
+    return YES;
 }
 
-- (void)setAction:(SEL)anAction
+- (BOOL)becomeFirstResponder
 {
-    _action = anAction;
+    var context = [self representedObject];
+    if (context)
+    {
+        var alert = context.alert;
+        var strongBorderColor = [CPColor colorWithRed:1.0 green:0.40 blue:0.40 alpha:1.0];
+        if (alert.category === @"grammar") {
+            strongBorderColor = [CPColor colorWithRed:0.20 green:0.60 blue:1.0 alpha:1.0];
+        } else if (alert.category === @"clarity") {
+            strongBorderColor = [CPColor colorWithRed:0.20 green:0.80 blue:0.20 alpha:1.0];
+        } else if (alert.category === @"style") {
+            strongBorderColor = [CPColor colorWithRed:0.70 green:0.30 blue:0.90 alpha:1.0];
+        }
+
+        [self setBorderWidth:2.5];
+        [self setBorderColor:strongBorderColor];
+
+        var appController = [CPApp delegate];
+        if (appController && [appController respondsToSelector:@selector(selectAlertTextActionWithCard:)])
+        {
+            [appController selectAlertTextActionWithCard:self];
+        }
+    }
+    return YES;
 }
 
+- (BOOL)resignFirstResponder
+{
+    [self setBorderWidth:1.0];
+    [self setBorderColor:[CPColor colorWithWhite:0.85 alpha:1.0]];
+    return YES;
+}
+
+// Request first responder keyboard focus when the card background is clicked
 - (void)mouseDown:(CPEvent)anEvent
 {
-    if (_target && _action && [_target respondsToSelector:_action])
+    [[self window] makeFirstResponder:self];
+}
+
+- (void)keyDown:(CPEvent)anEvent
+{
+    var keyCode = [anEvent keyCode];
+    var cards = [[self superview] subviews];
+    var index = [cards indexOfObject:self];
+
+    if (keyCode === CPDownArrowKeyCode)
     {
-        [_target performSelector:_action withObject:self];
+        if (index !== CPNotFound && index < [cards count] - 1)
+        {
+            var nextCard = [cards objectAtIndex:index + 1];
+            [[self window] makeFirstResponder:nextCard];
+        }
+    }
+    else if (keyCode === CPUpArrowKeyCode)
+    {
+        if (index !== CPNotFound && index > 0)
+        {
+            var prevCard = [cards objectAtIndex:index - 1];
+            [[self window] makeFirstResponder:prevCard];
+        }
+    }
+    else if (keyCode === CPReturnKeyCode || keyCode === CPSpaceKeyCode)
+    {
+        var appController = [CPApp delegate];
+        if (appController && [appController respondsToSelector:@selector(applyCorrectionForCard:)])
+        {
+            [appController applyCorrectionForCard:self];
+        }
+    }
+    else if (keyCode === CPLeftArrowKeyCode || keyCode === CPEscapeKeyCode)
+    {
+        var appController = [CPApp delegate];
+        if (appController && [appController respondsToSelector:@selector(returnFocusToEditor)])
+        {
+            [appController returnFocusToEditor];
+        }
+    }
+    else
+    {
+        [super keyDown:anEvent];
     }
 }
 
@@ -115,6 +189,25 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     var appItem = [mainMenu insertItemWithTitle:@"AI Assistant" action:nil keyEquivalent:nil atIndex:0];
     var appMenu = [[CPMenu alloc] initWithTitle:@"AI Assistant"];
     [appMenu addItemWithTitle:@"Settings..." action:@selector(openSettingsSheet:) keyEquivalent:@","];
+    
+    // VS Code Style Error Keys (F2 / Shift + F2)
+    var nextF2 = [appMenu addItemWithTitle:@"Next Error (F2)" action:@selector(focusNextAlert:) keyEquivalent:CPF2FunctionKey];
+    var prevF2 = [appMenu addItemWithTitle:@"Previous Error (Shift+F2)" action:@selector(focusPreviousAlert:) keyEquivalent:CPF2FunctionKey];
+    [prevF2 setKeyEquivalentModifierMask:CPShiftKeyMask];
+    
+    // IntelliJ Style Error Keys (F8 / Shift + F8)
+    var nextF8 = [appMenu addItemWithTitle:@"Next Error (F8)" action:@selector(focusNextAlert:) keyEquivalent:CPF8FunctionKey];
+    var prevF8 = [appMenu addItemWithTitle:@"Previous Error (Shift+F8)" action:@selector(focusPreviousAlert:) keyEquivalent:CPF8FunctionKey];
+    [prevF8 setKeyEquivalentModifierMask:CPShiftKeyMask];
+
+    // MS Word Style Error Keys (Alt + F7)
+    var wordStyleItem = [appMenu addItemWithTitle:@"Next Error (Word)" action:@selector(focusNextAlert:) keyEquivalent:CPF7FunctionKey];
+    [wordStyleItem setKeyEquivalentModifierMask:CPAlternateKeyMask];
+
+    // IntelliJ Style "Quick Fix" (Alt + Enter / Alt + Return)
+    var quickFixItem = [appMenu addItemWithTitle:@"Quick Fix" action:@selector(applyActiveCorrectionFromMenu:) keyEquivalent:CPCarriageReturnCharacter];
+    [quickFixItem setKeyEquivalentModifierMask:CPAlternateKeyMask];
+
     [mainMenu setSubmenu:appMenu forItem:appItem];
 
     // Format Menu with Font Panel
@@ -653,7 +746,7 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     return lines.join("\n");
 }
 
-// --- PROGRESSIVE DOCUMENT ANALYSIS ---
+// --- PROGESSIVE DOCUMENT ANALYSIS ---
 
 - (void)analyzeDocument:(id)sender
 {
@@ -943,7 +1036,8 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
 
 - (CPView)createAlertCardFrame:(CGRect)frame forAlert:(id)alert paragraphIndex:(int)pIndex
 {
-    var cardBox = [[CPBox alloc] initWithFrame:frame];
+    var cardBox = [[AlertCardView alloc] initWithFrame:frame];
+    [cardBox setRepresentedObject:{ "alert": alert, "paragraphIndex": pIndex }];
     
     [cardBox setBoxType:CPBoxCustom];
     [cardBox setBorderType:CPLineBorder];
@@ -957,30 +1051,18 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     var contentWidth = CGRectGetWidth([container bounds]);
 
     var cardBgColor = [CPColor colorWithRed:1.0 green:0.90 blue:0.90 alpha:1.0]; // Spelling
-    var accentColor = [CPColor colorWithRed:1.0 green:0.40 blue:0.40 alpha:1.0];
     
     if (alert.category === @"grammar") {
         cardBgColor = [CPColor colorWithRed:0.90 green:0.95 blue:1.0 alpha:1.0];
-        accentColor = [CPColor colorWithRed:0.20 green:0.60 blue:1.0 alpha:1.0];
     } else if (alert.category === @"clarity") {
         cardBgColor = [CPColor colorWithRed:0.92 green:1.0 blue:0.92 alpha:1.0];
-        accentColor = [CPColor colorWithRed:0.20 green:0.80 blue:0.20 alpha:1.0];
     } else if (alert.category === @"style") {
         cardBgColor = [CPColor colorWithRed:0.97 green:0.92 blue:1.0 alpha:1.0];
-        accentColor = [CPColor colorWithRed:0.70 green:0.30 blue:0.90 alpha:1.0];
     }
 
     [cardBox setFillColor:cardBgColor];
 
-    // Transparenter Klickhintergrund über die gesamte Inhaltsbox
-    var bgClickView = [[AlertCardBackgroundView alloc] initWithFrame:[container bounds]];
-    [bgClickView setAutoresizingMask:CPViewWidthSizable | CPViewHeightSizable];
-    [bgClickView setTarget:self];
-    [bgClickView setAction:@selector(selectAlertTextAction:)];
-    [bgClickView setRepresentedObject:{ "alert": alert, "paragraphIndex": pIndex }];
-    [container addSubview:bgClickView positioned:CPWindowBelow relativeTo:nil];
-
-    // Beschreibungstext (Hit-Tests sind deaktiviert, um Klicks an bgClickView weiterzuleiten)
+    // Beschreibungstext (Hit-Tests sind deaktiviert, um Klicks an cardBox weiterzuleiten)
     var description = [[CPTextField alloc] initWithFrame:CGRectMake(15, 5, contentWidth - 25, 45)];
     [description setStringValue:alert.explanation];
     [description setLineBreakMode:CPLineBreakByWordWrapping];
@@ -995,16 +1077,40 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     [actionBtn setFont:[CPFont boldSystemFontOfSize:11.0]];
     [actionBtn setTarget:self];
     [actionBtn setAction:@selector(applyCorrectionAction:)];
-    actionBtn._representedObject = { "alert": alert, "paragraphIndex": pIndex };
     [container addSubview:actionBtn];
 
     return cardBox;
 }
 
-- (void)selectAlertTextAction:(id)sender
+- (void)selectAlertTextActionWithCard:(AlertCardView)card
 {
-    var context = [sender representedObject];
+    var context = [card representedObject];
     if (!context) return;
+    
+    var alert = context.alert;
+    var pIndex = context.paragraphIndex;
+
+    var docString = [_editorTextView string];
+    var pData = _paragraphsData[pIndex];
+    if (!pData) return;
+    
+    var pText = pData.text;
+    var absoluteParaOffset = [docString rangeOfString:pText].location;
+    if (absoluteParaOffset === CPNotFound) return;
+
+    var absRange = CPMakeRange(absoluteParaOffset + alert.offset, alert.length);
+    [_editorTextView setSelectedRange:absRange];
+    [_editorTextView scrollRangeToVisible:absRange];
+    
+    var cardFrame = [card frame];
+    [[_sidebarScrollView contentView] scrollToPoint:CGPointMake(0, MAX(0, cardFrame.origin.y - 15))];
+}
+
+- (void)applyCorrectionForCard:(AlertCardView)card
+{
+    var context = [card representedObject];
+    if (!context) return;
+    
     var alert = context.alert;
     var pIndex = context.paragraphIndex;
 
@@ -1015,16 +1121,144 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
     var pText = pData.text;
     var absoluteParaOffset = [docString rangeOfString:pText].location;
     if (absoluteParaOffset === CPNotFound) {
+        [_statusLabel setStringValue:@"Context mismatch. Please re-run check."];
         return;
     }
 
     var absRange = CPMakeRange(absoluteParaOffset + alert.offset, alert.length);
+
     [_editorTextView setSelectedRange:absRange];
+    [_editorTextView insertText:alert.suggested_text];
+
+    var lengthDelta = [alert.suggested_text length] - alert.length;
+    var alerts = pData.alerts;
+
+    for (var i = 0; i < alerts.length; i++) {
+        if (alerts[i].offset > alert.offset) {
+            alerts[i].offset += lengthDelta;
+        }
+    }
+
+    var preStr = [pText substringToIndex:alert.offset];
+    var postStr = [pText substringFromIndex:alert.offset + alert.length];
+    pData.text = preStr + alert.suggested_text + postStr;
+
+    [pData.alerts removeObject:alert];
+
+    var cards = [_sidebarDocumentView subviews];
+    var activeIndex = [cards indexOfObject:card];
+
+    [self renderHighlightsAndSidebar];
+
+    var updatedCards = [_sidebarDocumentView subviews];
+    if ([updatedCards count] > 0)
+    {
+        var nextFocusIndex = MIN(activeIndex, [updatedCards count] - 1);
+        var nextCard = [updatedCards objectAtIndex:nextFocusIndex];
+        [[_editorTextView window] makeFirstResponder:nextCard];
+    }
+    else
+    {
+        [self returnFocusToEditor];
+    }
+
+    [_statusLabel setStringValue:@"Correction successfully applied."];
+}
+
+- (void)applyActiveCorrectionFromMenu:(id)sender
+{
+    var activeFirstResponder = [[_editorTextView window] firstResponder];
     
-    // Scroll editor to visible passage
-    [_editorTextView scrollRangeToVisible:absRange];
+    if ([activeFirstResponder isKindOfClass:[AlertCardView class]])
+    {
+        [self applyCorrectionForCard:activeFirstResponder];
+        return;
+    }
     
+    if (activeFirstResponder === _editorTextView && _paragraphsData)
+    {
+        var selectedRange = [_editorTextView selectedRange];
+        var docString = [_editorTextView string];
+        var cursorLoc = selectedRange.location;
+
+        for (var i = 0; i < _paragraphsData.length; i++) {
+            var pData = _paragraphsData[i];
+            if (!pData || !pData.completed) continue;
+            
+            var pText = pData.text;
+            var absoluteParaOffset = [docString rangeOfString:pText].location;
+            if (absoluteParaOffset === CPNotFound) continue;
+
+            var alerts = pData.alerts;
+            for (var j = 0; j < alerts.length; j++) {
+                var alert = alerts[j];
+                var alertStart = absoluteParaOffset + alert.offset;
+                var alertEnd = alertStart + alert.length;
+
+                if (cursorLoc >= alertStart && cursorLoc <= alertEnd) {
+                    var activeCard = [_alertCardsMap objectForKey:alert.id];
+                    if (activeCard) {
+                        [self applyCorrectionForCard:activeCard];
+                    }
+                    return;
+                }
+            }
+        }
+    }
+}
+
+- (void)applyCorrectionAction:(id)sender
+{
+    var card = [sender superview];
+    while (card && ![card isKindOfClass:[AlertCardView class]])
+    {
+        card = [card superview];
+    }
+    if (card)
+    {
+        [self applyCorrectionForCard:card];
+    }
+}
+
+- (void)returnFocusToEditor
+{
     [[_editorTextView window] makeFirstResponder:_editorTextView];
+}
+
+- (void)focusNextAlert:(id)sender
+{
+    var cards = [_sidebarDocumentView subviews];
+    if ([cards count] === 0) return;
+
+    var currentFirst = [[_editorTextView window] firstResponder];
+    var index = [cards indexOfObject:currentFirst];
+
+    if (index === CPNotFound)
+    {
+        [[_editorTextView window] makeFirstResponder:[cards objectAtIndex:0]];
+    }
+    else if (index < [cards count] - 1)
+    {
+        [[_editorTextView window] makeFirstResponder:[cards objectAtIndex:index + 1]];
+    }
+}
+
+- (void)focusPreviousAlert:(id)sender
+{
+    var cards = [_sidebarDocumentView subviews];
+    if ([cards count] === 0) return;
+
+    var currentFirst = [[_editorTextView window] firstResponder];
+    var index = [cards indexOfObject:currentFirst];
+
+    if (index === CPNotFound)
+    {
+        [[_editorTextView window] makeFirstResponder:[cards lastObject]];
+    }
+    else if (index > 0)
+    {
+        [[_editorTextView window] makeFirstResponder:[cards objectAtIndex:index - 1]];
+    }
 }
 
 - (void)textViewDidChangeSelection:(CPNotification)aNotification
@@ -1082,53 +1316,6 @@ var CorrectionAlertIdentifierAttributeName = @"CorrectionAlertIdentifierAttribut
             }
         }
     }
-}
-
-- (void)applyCorrectionAction:(id)sender
-{
-    var context = sender._representedObject;
-    var alert = context.alert;
-    var pIndex = context.paragraphIndex;
-
-    var docString = [_editorTextView string];
-    var pData = _paragraphsData[pIndex];
-    if (!pData) return;
-    
-    var pText = pData.text;
-    var absoluteParaOffset = [docString rangeOfString:pText].location;
-    if (absoluteParaOffset === CPNotFound) {
-        [_statusLabel setStringValue:@"Context mismatch. Please re-run check."];
-        return;
-    }
-
-    var absRange = CPMakeRange(absoluteParaOffset + alert.offset, alert.length);
-
-    [_editorTextView setSelectedRange:absRange];
-    [_editorTextView insertText:alert.suggested_text];
-
-    var lengthDelta = [alert.suggested_text length] - alert.length;
-    var alerts = pData.alerts;
-
-    for (var i = 0; i < alerts.length; i++) {
-        if (alerts[i].offset > alert.offset) {
-            alerts[i].offset += lengthDelta;
-        }
-    }
-
-    var originalLength = [pText length];
-    var preStr = [pText substringToIndex:alert.offset];
-    var postStr = [pText substringFromIndex:alert.offset + alert.length];
-    pData.text = preStr + alert.suggested_text + postStr;
-
-    [pData.alerts removeObject:alert];
-
-    [self renderHighlightsAndSidebar];
-    
-    // Focus and scroll corrected range
-    var newRange = CPMakeRange(absoluteParaOffset + alert.offset, [alert.suggested_text length]);
-    [_editorTextView scrollRangeToVisible:newRange];
-
-    [_statusLabel setStringValue:@"Correction successfully applied."];
 }
 
 @end
