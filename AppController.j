@@ -391,7 +391,7 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
 
         // Description Info
         var infoLabel = [[CPTextField alloc] initWithFrame:CGRectMake(15, 15, CGRectGetWidth(sheetBounds) - 30, 40)];
-        [infoLabel setStringValue:@"Configure your LLM integration (Ollama, Groq, Gemini, or OpenRouter)."];
+        [infoLabel setStringValue:@"Configure your LLM integration (Ollama, Groq, Gemini, OpenRouter, or Chrome AI)."];
         [infoLabel setFont:[CPFont systemFontOfSize:11.0]];
         [infoLabel setTextColor:[CPColor colorWithWhite:0.3 alpha:1.0]];
         [infoLabel setLineBreakMode:CPLineBreakByWordWrapping];
@@ -413,6 +413,8 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
         [[_servicePopUp lastItem] setRepresentedObject:@"gemini"];
         [_servicePopUp addItemWithTitle:@"OpenRouter"];
         [[_servicePopUp lastItem] setRepresentedObject:@"openrouter"];
+        [_servicePopUp addItemWithTitle:@"Chrome Built-in AI"];
+        [[_servicePopUp lastItem] setRepresentedObject:@"chrome"];
         [_servicePopUp setTarget:self];
         [_servicePopUp setAction:@selector(serviceTypeDidChange:)];
         [sheetContentView addSubview:_servicePopUp];
@@ -492,6 +494,7 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
     else if (activeService === @"groq") [_servicePopUp selectItemAtIndex:1];
     else if (activeService === @"gemini") [_servicePopUp selectItemAtIndex:2];
     else if (activeService === @"openrouter") [_servicePopUp selectItemAtIndex:3];
+    else if (activeService === @"chrome") [_servicePopUp selectItemAtIndex:4];
 
     [self updateFieldsForService:activeService];
 
@@ -507,16 +510,28 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
     if (serviceType === @"ollama") {
         [_endpointField setEnabled:YES];
         [_endpointField setStringValue:_tempOllamaEndpoint];
+        [_modelField setEnabled:YES];
         [_modelField setStringValue:_tempOllamaModel];
         [_apiKeyField setEnabled:NO];
         [_apiKeyField setStringValue:@""];
         [_apiKeyField setPlaceholderString:@"Not required for Ollama"];
+    } else if (serviceType === @"chrome") {
+        [_endpointField setEnabled:NO];
+        [_endpointField setStringValue:@""];
+        [_endpointField setPlaceholderString:@"Not required for Chrome AI"];
+        [_modelField setEnabled:NO];
+        [_modelField setStringValue:@"Gemini Nano"];
+        [_modelField setPlaceholderString:@"On-Device Model"];
+        [_apiKeyField setEnabled:NO];
+        [_apiKeyField setStringValue:@""];
+        [_apiKeyField setPlaceholderString:@"Not required for Chrome AI"];
     } else {
         [_endpointField setEnabled:NO];
         [_endpointField setStringValue:@""];
         [_endpointField setPlaceholderString:@"Constant Endpoint"];
         [_apiKeyField setEnabled:YES];
         [_apiKeyField setPlaceholderString:@"Enter API Key"];
+        [_modelField setEnabled:YES];
         
         if (serviceType === @"groq") {
             [_modelField setStringValue:_tempGroqModel];
@@ -866,6 +881,134 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
 
     var defaults = [CPUserDefaults standardUserDefaults];
     var serviceType = [defaults objectForKey:@"ServiceType"] || @"ollama";
+
+    // --- INTEGRATION: CHROME BUILT-IN AI (ON-DEVICE) ---
+    if (serviceType === @"chrome") {
+        var selfRef = self;
+        var aiAvailable = false;
+        var aiImpl = null;
+
+        // Check dual browser implementations for broad compatibility
+        if (typeof ai !== "undefined" && ai.languageModel) {
+            aiImpl = ai.languageModel;
+            aiAvailable = true;
+        } else if (typeof LanguageModel !== "undefined") {
+            aiImpl = LanguageModel;
+            aiAvailable = true;
+        }
+
+        if (!aiAvailable) {
+            CPLog.error(@"Chrome Built-in Prompt API is not supported in this browser environment. Ensure Chrome 137+ with Gemini Nano flags is active.");
+            var failedResult = {
+                "text": pText,
+                "alerts": [],
+                "completed": true
+            };
+            [selfRef paragraphAnalysisDidFinish:failedResult atIndex:pIndex];
+            return;
+        }
+
+        aiImpl.availability().then(function(avail) {
+            if (avail === "unavailable") {
+                throw new Error("Gemini Nano is unavailable. Please check chrome://flags and enable 'Optimization Guide On Device Model'.");
+            }
+            return aiImpl.create();
+        })
+        .then(function(session) {
+            // Define strict JSON Schema for structured output constraints
+            var schema = {
+                "type": "object",
+                "properties": {
+                    "alerts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "category": {
+                                    "type": "string",
+                                    "enum": ["spelling", "grammar", "clarity", "style"]
+                                },
+                                "title": { "type": "string" },
+                                "original_text": { "type": "string" },
+                                "suggested_text": { "type": "string" },
+                                "explanation": { "type": "string" }
+                            },
+                            "required": ["category", "title", "original_text", "suggested_text", "explanation"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["alerts"],
+                "additionalProperties": false
+            };
+
+            return session.prompt(fullPrompt, { responseConstraint: schema })
+                .then(function(resultText) {
+                    if (typeof session.destroy === "function") {
+                        session.destroy();
+                    }
+                    return resultText;
+                });
+        })
+        .then(function(resultText) {
+            var rawAlerts = [];
+            try {
+                // Ensure markdown tags are cleaned up if present
+                var cleanText = resultText.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+                var parsedObj = JSON.parse(cleanText);
+                if (parsedObj) {
+                    if (Array.isArray(parsedObj)) {
+                        rawAlerts = parsedObj;
+                    } else if (parsedObj.alerts && Array.isArray(parsedObj.alerts)) {
+                        rawAlerts = parsedObj.alerts;
+                    }
+                }
+            } catch (e) {
+                CPLog.error(@"Failed parsing Chrome AI structural result: " + e.message + ". Raw string was: " + resultText);
+            }
+
+            var processedAlerts = [];
+            var id_counter = 0;
+
+            for (var i = 0; i < rawAlerts.length; i++) {
+                var alert = rawAlerts[i];
+                var orig = alert.original_text;
+                if (!orig || orig === "") continue;
+
+                var offset = pText.indexOf(orig);
+                if (offset === -1) {
+                    offset = pText.toLowerCase().indexOf(orig.toLowerCase());
+                }
+
+                if (offset !== -1) {
+                    alert.offset = offset;
+                    alert.length = orig.length;
+                    alert.id = "alert_" + pIndex + "_" + id_counter++;
+                    processedAlerts.push(alert);
+                }
+            }
+
+            var completedResult = {
+                "text": pText,
+                "alerts": processedAlerts,
+                "completed": true
+            };
+
+            [selfRef paragraphAnalysisDidFinish:completedResult atIndex:pIndex];
+        })
+        .catch(function(error) {
+            CPLog.error(@"Chrome AI Paragraph Analysis pipeline execution failed: " + error.message);
+            var failedResult = {
+                "text": pText,
+                "alerts": [],
+                "completed": true
+            };
+            [selfRef paragraphAnalysisDidFinish:failedResult atIndex:pIndex];
+        });
+
+        return;
+    }
+
     var endpoint = [defaults objectForKey:@"OllamaEndpoint"] || @"";
     var model = @"";
     var apiKey = @"";
