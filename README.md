@@ -62,14 +62,11 @@ This project is built as a **serverless, browser-only application**—eliminatin
 ### Prerequisites
 
 *   A modern web browser (Safari, Chrome, Firefox, Edge).
+*   **For Google Gemini Nano (On-Device AI)**: Requires a compatible version of Google Chrome with on-device AI features enabled.
 *   **For local AI models (Ollama)**: Ensure Ollama is running locally with CORS enabled to allow browser requests:
     ```bash
     OLLAMA_ORIGINS="*" ollama serve
     ```
-*   **For Google Gemini Nano (On-Device AI)**: Requires a compatible version of Google Chrome with on-device AI features enabled:
-    1. Navigate to `chrome://flags/#optimization-guide-on-device-model` and set it to **Enabled BypassPrefRequirement**.
-    2. Navigate to `chrome://flags/#prompt-api-for-gemini-nano` and set it to **Enabled**.
-    3. Relaunch Chrome. You may need to wait briefly or restart the browser for Chrome to finish downloading the on-device model components.
 *   **For Cloud APIs (Groq, Gemini, OpenRouter)**: An active API key from the respective provider.
 
 ### Setup and Running Locally
