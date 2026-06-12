@@ -11,6 +11,7 @@ This project is built as a **serverless, browser-only application**—eliminatin
 
 *   **Serverless / Frontend-Only Architecture**: Zero server-side installation required. Accessible directly via standard web hosting (such as GitHub Pages).
 *   **Flexible LLM Integrations**: Connect seamlessly to various model providers directly from the UI:
+    *   **Google Gemini Nano**: Direct on-device inference using Google Chrome's built-in Experimental AI/Prompt API (no external API keys or network requests required).
     *   **Ollama**: Local execution for complete privacy.
     *   **Groq API**: High-speed cloud-based inference.
     *   **Google Gemini**: Highly-capable reasoning models.
@@ -32,17 +33,17 @@ This project is built as a **serverless, browser-only application**—eliminatin
  ┌────────────────────────┐         Direct HTTPS Fetch (CORS)      ┌─────────────────────────┐
  │                        │  ───────────────────────────────────>  │   External LLM APIs     │
  │  Cappuccino Frontend   │                                        │  • Ollama (Localhost)   │
- │     (Objective-J)      │  <───────────────────────────────────  │  • Groq API             │
+ │     (Objective-J)      │  <──────────────────────────────────  │  • Groq API             │
  │                        │        Raw JSON Response Objects       │  • Google Gemini        │
  │  Runs fully in browser │                                        │  • OpenRouter           │
  └───────────┬────────────┘                                        └─────────────────────────┘
-             │
-             │ Persistent Storage (State & Keys)
-             ▼
- ┌────────────────────────┐
- │     Browser Storage    │
- │   (CPUserDefaults /    │
- │     LocalStorage)      │
+             │                                                                  ▲
+             │ Persistent Storage (State & Keys)                                │ Local JS Call
+             ▼                                                                  │ (window.ai)
+ ┌────────────────────────┐                                        ┌────────────┴────────────┐
+ │     Browser Storage    │                                        │   Google Gemini Nano    │
+ │   (CPUserDefaults /    │                                        │    (Chrome On-Device)   │
+ │     LocalStorage)      │                                        └─────────────────────────┘
  └────────────────────────┘
 ```
 
@@ -52,7 +53,7 @@ This project is built as a **serverless, browser-only application**—eliminatin
 
 *   **Frontend UI & Engine**: Objective-J, Cappuccino SDK (AppKit & Foundation ports for the web)
 *   **State Management**: `CPUserDefaults` (Browser LocalStorage wrapper)
-*   **Inference Layer**: Native JavaScript `fetch` calling REST endpoints asynchronously
+*   **Inference Layer**: Native JavaScript `fetch` calling REST endpoints asynchronously, alongside native browser APIs (`window.ai`) for on-device execution.
 
 ---
 
@@ -65,6 +66,10 @@ This project is built as a **serverless, browser-only application**—eliminatin
     ```bash
     OLLAMA_ORIGINS="*" ollama serve
     ```
+*   **For Google Gemini Nano (On-Device AI)**: Requires a compatible version of Google Chrome with on-device AI features enabled:
+    1. Navigate to `chrome://flags/#optimization-guide-on-device-model` and set it to **Enabled BypassPrefRequirement**.
+    2. Navigate to `chrome://flags/#prompt-api-for-gemini-nano` and set it to **Enabled**.
+    3. Relaunch Chrome. You may need to wait briefly or restart the browser for Chrome to finish downloading the on-device model components.
 *   **For Cloud APIs (Groq, Gemini, OpenRouter)**: An active API key from the respective provider.
 
 ### Setup and Running Locally
