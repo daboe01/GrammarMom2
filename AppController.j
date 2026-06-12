@@ -898,7 +898,7 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
         }
 
         if (!aiAvailable) {
-            CPLog.error(@"Chrome Built-in Prompt API is not supported in this browser environment. Ensure Chrome 137+ with Gemini Nano flags is active.");
+            CPLog.error(@"Chrome Built-in Prompt API is not supported in this browser environment. Ensure Chrome M137+ with Gemini Nano flags is active.");
             var failedResult = {
                 "text": pText,
                 "alerts": [],
@@ -908,11 +908,17 @@ var CPF2FunctionKey = CPF2FunctionKey || @"\uf705",
             return;
         }
 
-        aiImpl.availability().then(function(avail) {
+        // Configure languages to comply with Chrome M140+ specification requirements
+        var queryOptions = {
+            expectedInputs: [{ type: "text", languages: [langCode] }],
+            expectedOutputs: [{ type: "text", languages: [langCode] }]
+        };
+
+        aiImpl.availability(queryOptions).then(function(avail) {
             if (avail === "unavailable") {
                 throw new Error("Gemini Nano is unavailable. Please check chrome://flags and enable 'Optimization Guide On Device Model'.");
             }
-            return aiImpl.create();
+            return aiImpl.create(queryOptions);
         })
         .then(function(session) {
             // Define strict JSON Schema for structured output constraints
